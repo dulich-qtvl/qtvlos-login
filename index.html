@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QTVL.OS — Đăng nhập</title>
+  <!-- Google Identity Services -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', Arial, sans-serif;
+      background: #f4f6f8;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .box {
+      background: #fff;
+      border-radius: 14px;
+      padding: 32px 28px;
+      max-width: 380px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    }
+    .logo { font-size: 32px; margin-bottom: 8px; }
+    h2 { color: #1565c0; font-size: 18px; margin-bottom: 6px; }
+    p { color: #607d8b; font-size: 13px; margin-bottom: 24px; line-height: 1.5; }
+    #gsiButtonContainer { display: flex; justify-content: center; margin-bottom: 16px; }
+    .status { font-size: 13px; color: #607d8b; min-height: 20px; }
+    .status.error { color: #c62828; }
+    .status.success { color: #2e7d32; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <div class="logo">🔐</div>
+    <h2>QTVL.OS — Đăng nhập Google</h2>
+    <p>Đăng nhập để xác thực danh tính của bạn cho hệ thống Sales/Ops.</p>
+    <div id="gsiButtonContainer"></div>
+    <div class="status" id="statusText"></div>
+  </div>
+
+  <script>
+    // ⚠️ QUAN TRỌNG: thay đúng Client ID thật của hệ thống QTVL.OS — PHẢI khớp với
+    // Config.OAUTH.CLIENT_ID trong Apps Script, nếu không token sẽ bị Server từ chối khi
+    // verify (kiểm tra "aud" không khớp).
+    const GOOGLE_CLIENT_ID = "362357709588-u34iccgpipscg2ogdvr5tcs82p5egtq3.apps.googleusercontent.com";
+
+    // Trang này CHỈ được phép gửi token về 2 domain hợp lệ của hệ thống (Apps Script Web
+    // App luôn chạy trên 1 trong 2 domain này) — chặn gửi token tới bất kỳ domain khác,
+    // tránh rò token nếu trang bị mở nhầm/mở độc lập không qua popup từ Form/Dashboard thật.
+    const ALLOWED_TARGET_ORIGIN_PATTERNS = [
+      /^https:\/\/script\.google\.com$/,
+      /^https:\/\/n-[a-z0-9]+-script\.googleusercontent\.com$/,
+      /^https:\/\/[a-z0-9]+-script\.googleusercontent\.com$/
+    ];
+
+    function isAllowedOrigin(origin) {
+      return ALLOWED_TARGET_ORIGIN_PATTERNS.some(pattern => pattern.test(origin));
+    }
+
+    window.onload = function () {
+      if (typeof google === 'undefined' || !google.accounts) {
+        document.getElementById('statusText').textContent = 'Không tải được Google Identity Services — kiểm tra kết nối mạng.';
+        document.getElementById('statusText').className = 'status error';
+        return;
+      }
+      google.accounts.id.initialize({
+        client_id: GOOGLE_CLIENT_ID,
+        callback: handleGoogleSignIn
+      });
+      google.accounts.id.renderButton(
+        document.getElementById('gsiButtonContainer'),
+        { theme: 'outline', size: 'large', text: 'signin_with', shape: 'pill' }
+      );
+    };
+
+    function handleGoogleSignIn(response) {
+      const idToken = response.credential;
+      const statusEl = document.getElementById('statusText');
+
+      // window.opener = cửa sổ Form/Dashboard ĐÃ mở popup này (window.open). Nếu trang bị
+      // mở trực tiếp (không qua popup từ Form/Dashboard), window.opener sẽ là null — không
+      // có nơi nào để gửi token về, báo lỗi rõ ràng cho người dùng thay vì im lặng.
+      if (!window.opener) {
+        statusEl.textContent = 'Trang này cần được mở từ Form Sales hoặc Dashboard Ops — vui lòng đóng tab này và bấm "Đăng nhập" lại từ trang chính.';
+        statusEl.className = 'status error';
+        return;
+      }
+
+      const targetOrigin = window.opener.location.origin;
+      if (!isAllowedOrigin(targetOrigin)) {
+        statusEl.textContent = 'Cửa sổ gốc không hợp lệ — từ chối gửi thông tin đăng nhập.';
+        statusEl.className = 'status error';
+        return;
+      }
+
+      statusEl.textContent = 'Đăng nhập thành công — đang quay lại...';
+      statusEl.className = 'status success';
+
+      window.opener.postMessage({ source: 'qtvlos-login', idToken: idToken }, targetOrigin);
+
+      // Tự đóng popup sau khi gửi token thành công — người dùng không cần tự bấm đóng tab.
+      setTimeout(() => window.close(), 600);
+    }
+  </script>
+</body>
+</html>
